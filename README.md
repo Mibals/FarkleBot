@@ -16,3 +16,4 @@ A Discord bot to play Farkle with friends!
 
 ## Commands
 - `!farkle`: Start a game.
+- `!quit`: Quit a game.
