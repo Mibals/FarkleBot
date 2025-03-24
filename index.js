@@ -150,9 +150,12 @@ async function handleRollDice(interaction) {
     if (currentPlayer.id !== interaction.user.id) return interaction.reply({ content: "Not your turn.", ephemeral: true });
     game.lastActivity = Date.now();
 
+    console.log(`Before roll: currentRoll=${game.currentRoll}, selectedDice=${game.selectedDice}, accumulatedScore=${game.accumulatedScore}`);
+
     if (game.currentRoll.length === 0 && game.selectedDice.length === 0 && game.accumulatedScore === 0) {
         // First roll of the turn
         game.currentRoll = Array.from({ length: 6 }, () => Math.floor(Math.random() * 6) + 1);
+        console.log(`First roll: currentRoll=${game.currentRoll}`);
         if (!canScoreAny(game.currentRoll)) {
             game.turnScore = 0;
             game.accumulatedScore = 0;
@@ -179,6 +182,7 @@ async function handleRollDice(interaction) {
         // Handle subsequent rolls
         if (game.selectedDice.length > 0) {
             const { validDice, score } = extractValidDice(game.selectedDice);
+            console.log(`After extractValidDice: validDice=${validDice}, score=${score}`);
             if (validDice.length === 0) {
                 game.turnScore = 0;
                 game.accumulatedScore = 0;
@@ -209,14 +213,18 @@ async function handleRollDice(interaction) {
 
             game.accumulatedScore += score;
             game.turnScore = 0;
-            game.currentRoll = game.currentRoll.filter(d => !game.selectedDice.includes(d)); // Fixed line
             game.selectedDice = [];
+            console.log(`After clearing selectedDice: currentRoll=${game.currentRoll}`);
         }
 
         // Roll remaining dice, reset to 6 if none left
         const diceToRoll = game.currentRoll.length > 0 ? game.currentRoll.length : 6;
         console.log(`Rolling ${diceToRoll} dice, currentRoll was: ${game.currentRoll}`);
-        game.currentRoll = Array.from({ length: diceToRoll }, () => Math.floor(Math.random() * 6) + 1);
+        game.currentRoll = [];
+        for (let i = 0; i < diceToRoll; i++) {
+            game.currentRoll.push(Math.floor(Math.random() * 6) + 1);
+        }
+        console.log(`After roll: currentRoll=${game.currentRoll}`);
 
         if (!canScoreAny(game.currentRoll)) {
             game.turnScore = 0;
@@ -243,7 +251,7 @@ async function handleRollDice(interaction) {
     }
 
     const rows = createDiceButtons(game);
-    await interaction.update({ embeds: [gameEmbed(game)], components: rows });
+    await interaction.update({ embeds: [gameEmbed(game)], components: rows ]);
 }
 
 async function handleSelectDie(interaction) {
@@ -263,7 +271,7 @@ async function handleSelectDie(interaction) {
     game.turnScore = calculateScore(game.selectedDice);
 
     const rows = createDiceButtons(game);
-    await interaction.update({ embeds: [gameEmbed(game)], components: rows });
+    await interaction.update({ embeds: [gameEmbed(game)], components: rows ]);
 }
 
 async function handleBankPoints(interaction) {
@@ -324,7 +332,7 @@ async function handleResetSelection(interaction) {
     game.turnScore = 0;
 
     const rows = createDiceButtons(game);
-    await interaction.update({ embeds: [gameEmbed(game)], components: rows });
+    await interaction.update({ embeds: [gameEmbed(game)], components: rows ]);
 }
 
 function gameEmbed(game) {
