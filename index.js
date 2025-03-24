@@ -251,7 +251,7 @@ async function handleRollDice(interaction) {
     }
 
     const rows = createDiceButtons(game);
-    await interaction.update({ embeds: [gameEmbed(game)], components: rows ]);
+    await interaction.update({ embeds: [gameEmbed(game)], components: rows });
 }
 
 async function handleSelectDie(interaction) {
@@ -271,7 +271,7 @@ async function handleSelectDie(interaction) {
     game.turnScore = calculateScore(game.selectedDice);
 
     const rows = createDiceButtons(game);
-    await interaction.update({ embeds: [gameEmbed(game)], components: rows ]);
+    await interaction.update({ embeds: [gameEmbed(game)], components: rows });
 }
 
 async function handleBankPoints(interaction) {
@@ -332,7 +332,7 @@ async function handleResetSelection(interaction) {
     game.turnScore = 0;
 
     const rows = createDiceButtons(game);
-    await interaction.update({ embeds: [gameEmbed(game)], components: rows ]);
+    await interaction.update({ embeds: [gameEmbed(game)], components: rows });
 }
 
 function gameEmbed(game) {
