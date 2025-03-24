@@ -18,7 +18,9 @@ const SCORING_RULES = {
     '1111': 2000, '2222': 400, '3333': 600, '4444': 800, '5555': 1000, '6666': 1200,
     '11111': 3000, '22222': 600, '33333': 900, '44444': 1200, '55555': 1500, '66666': 1800,
     '111111': 4000, '222222': 800, '333333': 1200, '444444': 1600, '555555': 2000, '666666': 2400,
-    '123456': 1500
+    '123456': 1500,
+    '12345': 500,  // Add 1-5 straight
+    '23456': 750   // Add 2-6 straight
 };
 
 client.once('ready', () => {
@@ -180,42 +182,44 @@ async function handleRollDice(interaction) {
         }
     } else {
         // Handle subsequent rolls
-        if (game.selectedDice.length > 0) {
-            const { validDice, score } = extractValidDice(game.selectedDice);
-            console.log(`After extractValidDice: validDice=${validDice}, score=${score}`);
-            if (validDice.length === 0) {
-                game.turnScore = 0;
-                game.accumulatedScore = 0;
-                game.currentRoll = [];
-                game.selectedDice = [];
-                game.currentTurn = (game.currentTurn + 1) % game.players.length;
-                const nextPlayer = game.players[game.currentTurn];
-                const embed = new EmbedBuilder()
-                    .setTitle('Farkle: FARKLE!')
-                    .setDescription(`${currentPlayer.name} farkled! ${nextPlayer.name}'s turn.`)
-                    .addFields(
-                        { name: 'Last Roll', value: formatDiceRoll(game.currentRoll), inline: false },
-                        { name: 'Selected Dice', value: formatDiceRoll(game.selectedDice), inline: false },
-                        { name: `${game.players[0].name}'s Score`, value: game.players[0].score.toString(), inline: true },
-                        { name: `${game.players[1].name}'s Score`, value: game.players[1].score.toString(), inline: true }
-                    )
-                    .setColor(0xFF0000);
-                const row = new ActionRowBuilder()
-                    .addComponents(
-                        new ButtonBuilder().setCustomId('roll_dice').setLabel('Roll Dice').setStyle(ButtonStyle.Primary)
-                    );
-                return await interaction.update({ embeds: [embed], components: [row] });
-            }
-
-            if (validDice.length < game.selectedDice.length) {
-                return interaction.reply({ content: "Error: Invalid dice selected. Only valid dice can be rolled. Reset to proceed.", ephemeral: true });
-            }
-
-            game.accumulatedScore += score;
-            game.turnScore = 0;
-            game.selectedDice = [];
-            console.log(`After clearing selectedDice: currentRoll=${game.currentRoll}`);
+        if (game.selectedDice.length === 0) {
+            return interaction.reply({ content: "You must select valid dice before rolling again.", ephemeral: true });
         }
+
+        const { validDice, score } = extractValidDice(game.selectedDice);
+        console.log(`After extractValidDice: validDice=${validDice}, score=${score}`);
+        if (validDice.length === 0) {
+            game.turnScore = 0;
+            game.accumulatedScore = 0;
+            game.currentRoll = [];
+            game.selectedDice = [];
+            game.currentTurn = (game.currentTurn + 1) % game.players.length;
+            const nextPlayer = game.players[game.currentTurn];
+            const embed = new EmbedBuilder()
+                .setTitle('Farkle: FARKLE!')
+                .setDescription(`${currentPlayer.name} farkled! ${nextPlayer.name}'s turn.`)
+                .addFields(
+                    { name: 'Last Roll', value: formatDiceRoll(game.currentRoll), inline: false },
+                    { name: 'Selected Dice', value: formatDiceRoll(game.selectedDice), inline: false },
+                    { name: `${game.players[0].name}'s Score`, value: game.players[0].score.toString(), inline: true },
+                    { name: `${game.players[1].name}'s Score`, value: game.players[1].score.toString(), inline: true }
+                )
+                .setColor(0xFF0000);
+            const row = new ActionRowBuilder()
+                .addComponents(
+                    new ButtonBuilder().setCustomId('roll_dice').setLabel('Roll Dice').setStyle(ButtonStyle.Primary)
+                );
+            return await interaction.update({ embeds: [embed], components: [row] });
+        }
+
+        if (validDice.length < game.selectedDice.length) {
+            return interaction.reply({ content: "Error: Invalid dice selected. Only valid dice can be rolled. Reset to proceed.", ephemeral: true });
+        }
+
+        game.accumulatedScore += score;
+        game.turnScore = 0;
+        game.selectedDice = [];
+        console.log(`After clearing selectedDice: currentRoll=${game.currentRoll}`);
 
         // Roll remaining dice, reset to 6 if none left
         const diceToRoll = game.currentRoll.length > 0 ? game.currentRoll.length : 6;
@@ -332,7 +336,7 @@ async function handleResetSelection(interaction) {
     game.turnScore = 0;
 
     const rows = createDiceButtons(game);
-    await interaction.update({ embeds: [gameEmbed(game)], components: rows });
+    await interaction.update({ embeds: [gameEmbed(game)], components: [rows] });
 }
 
 function gameEmbed(game) {
@@ -396,6 +400,11 @@ function canScoreAny(dice) {
     dice.forEach(die => counts[die] = (counts[die] || 0) + 1);
     for (const count of Object.values(counts)) if (count >= 3) return true;
     if (dice.length >= 6 && [...dice].sort((a, b) => a - b).join('') === '123456') return true;
+    if (dice.length >= 5) {
+        const sortedDice = [...dice].sort((a, b) => a - b);
+        const firstFive = sortedDice.slice(0, 5).join('');
+        if (firstFive === '12345' || firstFive === '23456') return true;
+    }
     return false;
 }
 
@@ -403,16 +412,40 @@ function calculateScore(dice) {
     if (!dice || dice.length === 0) return 0;
     let score = 0;
     let remainingDice = [...dice];
-    if (dice.length >= 6 && [...dice].sort((a, b) => a - b).join('') === '123456') return SCORING_RULES['123456'];
+
+    // Check for 6-dice straight
+    if (dice.length >= 6 && [...dice].sort((a, b) => a - b).join('') === '123456') {
+        return SCORING_RULES['123456'];
+    }
+    // Check for 5-dice straights
+    if (dice.length >= 5) {
+        const sortedDice = [...dice].sort((a, b) => a - b);
+        const firstFive = sortedDice.slice(0, 5).join('');
+        if (firstFive === '12345') {
+            remainingDice = sortedDice.slice(5);
+            score += SCORING_RULES['12345'];
+        } else if (firstFive === '23456') {
+            remainingDice = sortedDice.slice(5);
+            score += SCORING_RULES['23456'];
+        }
+    }
+
+    // Check for three-of-a-kind or higher
     const counts = {};
-    dice.forEach(die => counts[die] = (counts[die] || 0) + 1);
+    remainingDice.forEach(die => counts[die] = (counts[die] || 0) + 1);
     for (const [value, count] of Object.entries(counts)) {
         if (count >= 6) { score += SCORING_RULES[value.repeat(6)] || 0; remainingDice = remainingDice.filter(d => d !== parseInt(value)); }
         else if (count >= 5) { score += SCORING_RULES[value.repeat(5)] || 0; remainingDice = remainingDice.filter(d => d !== parseInt(value)); }
         else if (count >= 4) { score += SCORING_RULES[value.repeat(4)] || 0; remainingDice = remainingDice.filter(d => d !== parseInt(value)); }
         else if (count >= 3) { score += SCORING_RULES[value.repeat(3)] || 0; remainingDice = remainingDice.filter(d => d !== parseInt(value)); }
     }
-    remainingDice.forEach(die => { if (die === 1) score += SCORING_RULES['1']; if (die === 5) score += SCORING_RULES['5']; });
+
+    // Score remaining 1s and 5s
+    remainingDice.forEach(die => {
+        if (die === 1) score += SCORING_RULES['1'];
+        if (die === 5) score += SCORING_RULES['5'];
+    });
+
     return score;
 }
 
@@ -421,14 +454,30 @@ function extractValidDice(dice) {
     let score = 0;
     let validDice = [];
     let remainingDice = [...dice];
-    
+
+    // Check for 6-dice straight
     if (dice.length >= 6 && [...dice].sort((a, b) => a - b).join('') === '123456') {
         return { validDice: dice, score: SCORING_RULES['123456'] };
     }
 
-    const counts = {};
-    dice.forEach(die => counts[die] = (counts[die] || 0) + 1);
+    // Check for 5-dice straights
+    if (dice.length >= 5) {
+        const sortedDice = [...dice].sort((a, b) => a - b);
+        const firstFive = sortedDice.slice(0, 5).join('');
+        if (firstFive === '12345') {
+            score += SCORING_RULES['12345'];
+            validDice = sortedDice.slice(0, 5);
+            remainingDice = sortedDice.slice(5);
+        } else if (firstFive === '23456') {
+            score += SCORING_RULES['23456'];
+            validDice = sortedDice.slice(0, 5);
+            remainingDice = sortedDice.slice(5);
+        }
+    }
 
+    // Check for three-of-a-kind or higher
+    const counts = {};
+    remainingDice.forEach(die => counts[die] = (counts[die] || 0) + 1);
     for (const [value, count] of Object.entries(counts)) {
         const num = parseInt(value);
         if (count >= 6) {
@@ -450,6 +499,7 @@ function extractValidDice(dice) {
         }
     }
 
+    // Score remaining 1s and 5s
     remainingDice.forEach(die => {
         if (die === 1) {
             score += SCORING_RULES['1'];
