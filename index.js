@@ -59,6 +59,22 @@ client.on('messageCreate', async (message) => {
                 new ButtonBuilder().setCustomId('start_game').setLabel('Start Game').setStyle(ButtonStyle.Primary)
             );
         await message.channel.send({ embeds: [embed], components: [row] });
+    } else if (content === '!quit') {
+        const game = activeGames.get(message.channelId);
+        if (!game) return message.reply("There's no active game to quit.");
+        const currentPlayer = game.players[game.currentTurn];
+        if (currentPlayer.id !== message.author.id) return message.reply("You can only quit on your turn.");
+
+        activeGames.delete(message.channelId);
+        const embed = new EmbedBuilder()
+            .setTitle('Farkle: Game Ended')
+            .setDescription(`${currentPlayer.name} has quit the game.`)
+            .addFields(
+                { name: `${game.players[0].name}'s Score`, value: game.players[0].score.toString(), inline: true },
+                { name: `${game.players[1]?.name || 'Opponent'}'s Score`, value: (game.players[1]?.score || 0).toString(), inline: true }
+            )
+            .setColor(0xFF0000);
+        await message.channel.send({ embeds: [embed] });
     }
 });
 
@@ -193,7 +209,7 @@ async function handleRollDice(interaction) {
 
             game.accumulatedScore += score;
             game.turnScore = 0;
-            game.currentRoll = game.currentRoll.filter(d => !validDice.includes(d));
+            game.currentRoll = game.currentRoll.filter(d => !game.selectedDice.includes(d)); // Fixed line
             game.selectedDice = [];
         }
 
