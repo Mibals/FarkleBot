@@ -1,30 +1,36 @@
+// Load required modules
 const { Client, GatewayIntentBits, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, PermissionsBitField } = require('discord.js');
-require('dotenv').config();
+require('dotenv').config(); // Load environment variables from .env file
 
+// Set up the Discord client with necessary intents
 const client = new Client({
     intents: [
-        GatewayIntentBits.Guilds,
-        GatewayIntentBits.GuildMessages,
-        GatewayIntentBits.MessageContent
+        GatewayIntentBits.Guilds,        // Access to guild (server) info
+        GatewayIntentBits.GuildMessages, // Access to messages in guilds
+        GatewayIntentBits.MessageContent // Access to message content for commands
     ]
 });
 
-const activeGames = new Map();
-const GAME_TIMEOUT = 30 * 60 * 1000;
+// Game storage and constants
+const activeGames = new Map(); // Stores active games by channel ID
+const GAME_TIMEOUT = 30 * 60 * 1000; // 30 minutes timeout for inactive games
 
+// Scoring rules for Farkle
 const SCORING_RULES = {
     '1': 100, '5': 50,
     '111': 1000, '222': 200, '333': 300, '444': 400, '555': 500, '666': 600,
     '1111': 2000, '2222': 400, '3333': 600, '4444': 800, '5555': 1000, '6666': 1200,
     '11111': 3000, '22222': 600, '33333': 900, '44444': 1200, '55555': 1500, '66666': 1800,
     '111111': 4000, '222222': 800, '333333': 1200, '444444': 1600, '555555': 2000, '666666': 2400,
-    '123456': 1500,
-    '12345': 500,  // Add 1-5 straight
-    '23456': 750   // Add 2-6 straight
+    '123456': 1500, // Six-dice straight
+    '12345': 500,   // Five-dice straight (1-5)
+    '23456': 750    // Five-dice straight (2-6)
 };
 
+// When the bot logs in
 client.once('ready', () => {
     console.log(`Logged in as ${client.user.tag}`);
+    // Clean up inactive games every 5 minutes
     setInterval(() => {
         const now = Date.now();
         for (const [channelId, game] of activeGames.entries()) {
@@ -36,8 +42,9 @@ client.once('ready', () => {
     }, 5 * 60 * 1000);
 });
 
+// Handle commands from messages
 client.on('messageCreate', async (message) => {
-    if (message.author.bot) return;
+    if (message.author.bot) return; // Ignore bot messages
     const content = message.content.toLowerCase();
 
     if (content === '!farkle') {
@@ -80,6 +87,7 @@ client.on('messageCreate', async (message) => {
     }
 });
 
+// Handle button interactions
 client.on('interactionCreate', async (interaction) => {
     if (!interaction.isButton()) return;
     try {
@@ -96,6 +104,7 @@ client.on('interactionCreate', async (interaction) => {
     }
 });
 
+// Start a new game
 async function handleStartGame(interaction) {
     if (activeGames.has(interaction.channelId)) return interaction.reply({ content: "There's already an active game.", ephemeral: true });
     activeGames.set(interaction.channelId, {
@@ -120,6 +129,7 @@ async function handleStartGame(interaction) {
     await interaction.reply({ embeds: [embed], components: [row] });
 }
 
+// Join an existing game
 async function handleJoinGame(interaction) {
     const channelId = interaction.customId.split('_')[1];
     const game = activeGames.get(channelId);
@@ -145,6 +155,7 @@ async function handleJoinGame(interaction) {
     await interaction.update({ embeds: [embed], components: [row] });
 }
 
+// Roll dice for the current turn
 async function handleRollDice(interaction) {
     const game = activeGames.get(interaction.channelId);
     if (!game) return interaction.reply({ content: "No active game.", ephemeral: true });
@@ -258,6 +269,7 @@ async function handleRollDice(interaction) {
     await interaction.update({ embeds: [gameEmbed(game)], components: rows });
 }
 
+// Select a die from the current roll
 async function handleSelectDie(interaction) {
     const game = activeGames.get(interaction.channelId);
     if (!game) return interaction.reply({ content: "No active game.", ephemeral: true });
@@ -278,6 +290,7 @@ async function handleSelectDie(interaction) {
     await interaction.update({ embeds: [gameEmbed(game)], components: rows });
 }
 
+// Bank points and end turn
 async function handleBankPoints(interaction) {
     const game = activeGames.get(interaction.channelId);
     if (!game) return interaction.reply({ content: "No active game.", ephemeral: true });
@@ -324,21 +337,48 @@ async function handleBankPoints(interaction) {
     await interaction.update({ embeds: [embed], components: [row] });
 }
 
+// Reset selected dice (Fixed version)
 async function handleResetSelection(interaction) {
+    await interaction.deferUpdate(); // Defer to avoid timeout issues
+
     const game = activeGames.get(interaction.channelId);
-    if (!game) return interaction.reply({ content: "No active game.", ephemeral: true });
+    if (!game) {
+        return await interaction.editReply({ content: "No active game.", ephemeral: true });
+    }
     const currentPlayer = game.players[game.currentTurn];
-    if (currentPlayer.id !== interaction.user.id) return interaction.reply({ content: "Not your turn.", ephemeral: true });
+    if (currentPlayer.id !== interaction.user.id) {
+        return await interaction.editReply({ content: "Not your turn.", ephemeral: true });
+    }
     game.lastActivity = Date.now();
 
-    game.currentRoll = game.currentRoll.concat(game.selectedDice);
-    game.selectedDice = [];
-    game.turnScore = 0;
+    // Validate game state for safety
+    if (!Array.isArray(game.currentRoll) || !Array.isArray(game.selectedDice)) {
+        console.error(`Invalid state: currentRoll=${game.currentRoll}, selectedDice=${game.selectedDice}`);
+        return await interaction.editReply({ content: "Error: Invalid game state.", ephemeral: true });
+    }
 
-    const rows = createDiceButtons(game);
-    await interaction.update({ embeds: [gameEmbed(game)], components: [rows] });
+    // Log state before reset for debugging
+    console.log(`Before reset: currentRoll=${game.currentRoll}, selectedDice=${game.selectedDice}, turnScore=${game.turnScore}, accumulatedScore=${game.accumulatedScore}`);
+
+    // Move selected dice back to current roll, clear selection, reset turnScore
+    game.currentRoll = [...game.currentRoll, ...game.selectedDice];
+    game.selectedDice = [];
+    game.turnScore = 0; // Only reset turnScore, not accumulatedScore
+
+    // Log state after reset
+    console.log(`After reset: currentRoll=${game.currentRoll}, selectedDice=${game.selectedDice}, turnScore=${game.turnScore}, accumulatedScore=${game.accumulatedScore}`);
+
+    // Update the interaction with new embed and buttons
+    try {
+        const rows = createDiceButtons(game);
+        await interaction.editReply({ embeds: [gameEmbed(game)], components: rows });
+    } catch (error) {
+        console.error(`Error updating interaction: ${error.message}`, error.stack);
+        await interaction.editReply({ content: "Error resetting selection.", ephemeral: true });
+    }
 }
 
+// Create the game embed
 function gameEmbed(game) {
     const currentPlayer = game.players[game.currentTurn];
     return new EmbedBuilder()
@@ -354,6 +394,7 @@ function gameEmbed(game) {
         .setColor(0x0099FF);
 }
 
+// Create buttons for dice and actions
 function createDiceButtons(game) {
     const diceButtons = game.currentRoll.map((value, index) =>
         new ButtonBuilder()
@@ -384,15 +425,17 @@ function createDiceButtons(game) {
                 .setDisabled(game.selectedDice.length === 0)
         );
     rows.push(actionRow);
-    return rows.slice(0, 5);
+    return rows.slice(0, 5); // Discord limits to 5 rows
 }
 
+// Format dice roll with emojis
 function formatDiceRoll(dice) {
     if (!dice || dice.length === 0) return 'None';
     const diceEmoji = { 1: '⚀', 2: '⚁', 3: '⚂', 4: '⚃', 5: '⚄', 6: '⚅' };
     return dice.map(d => `${diceEmoji[d]} ${d}`).join(' ');
 }
 
+// Check if dice can score
 function canScoreAny(dice) {
     if (!dice || dice.length === 0) return false;
     if (dice.includes(1) || dice.includes(5)) return true;
@@ -408,6 +451,7 @@ function canScoreAny(dice) {
     return false;
 }
 
+// Calculate score for selected dice
 function calculateScore(dice) {
     if (!dice || dice.length === 0) return 0;
     let score = 0;
@@ -449,6 +493,7 @@ function calculateScore(dice) {
     return score;
 }
 
+// Extract valid scoring dice
 function extractValidDice(dice) {
     if (!dice || dice.length === 0) return { validDice: [], score: 0 };
     let score = 0;
@@ -513,7 +558,10 @@ function extractValidDice(dice) {
     return { validDice, score };
 }
 
+// Log unhandled promise rejections
 process.on('unhandledRejection', error => console.error('Unhandled promise rejection:', error));
+
+// Log in to Discord
 client.login(process.env.DISCORD_TOKEN).catch(error => {
     console.error('Failed to log in to Discord:', error);
     process.exit(1);
